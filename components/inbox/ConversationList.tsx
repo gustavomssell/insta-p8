@@ -11,28 +11,40 @@ interface ConversationListProps {
     onSelect: (id: string, username: string, recipientId: string) => void
 }
 
+const CONVERSATIONS_POLL_MS = 15_000
+
 export function ConversationList({ userId, selectedId, onSelect }: ConversationListProps) {
     const [conversations, setConversations] = useState<Conversation[]>([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
         if (!userId) return
+        let disposed = false
 
-        const fetchConversations = async () => {
+        const fetchConversations = async (background: boolean) => {
             try {
                 const res = await fetch(`/api/inbox/conversations?userId=${userId}`)
                 const data = await res.json()
-                if (Array.isArray(data)) {
-                    setConversations(data)
-                }
+                if (disposed || !Array.isArray(data)) return
+                setConversations(data)
             } catch (error) {
-                console.error("Failed to load conversations", error)
+                if (!disposed) console.error("Failed to load conversations", error)
             } finally {
-                setLoading(false)
+                if (!disposed && !background) setLoading(false)
             }
         }
 
-        fetchConversations()
+        void fetchConversations(false)
+
+        // Live inbox: refresh the list every 15s while the tab is visible.
+        const poll = setInterval(() => {
+            if (document.visibilityState === "visible") void fetchConversations(true)
+        }, CONVERSATIONS_POLL_MS)
+
+        return () => {
+            disposed = true
+            clearInterval(poll)
+        }
     }, [userId])
 
     if (loading) {

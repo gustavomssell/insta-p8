@@ -14,6 +14,18 @@ interface ChatWindowProps {
     onBack?: () => void
 }
 
+const MESSAGES_POLL_MS = 10_000
+const OPTIMISTIC_TTL_MS = 60_000
+
+function mergeMessages(previous: Message[], fetched: Message[], now: number): Message[] {
+    const pendingOptimistic = previous.filter(message => {
+        if (!message.id.startsWith("temp_")) return false
+        if (now - new Date(message.created_at).getTime() > OPTIMISTIC_TTL_MS) return false
+        return !fetched.some(server => server.content === message.content && server.is_from_instagram === message.is_from_instagram)
+    })
+    return [...fetched, ...pendingOptimistic]
+}
+
 export function ChatWindow({ conversationId, recipientId, recipientName, userId, onBack }: ChatWindowProps) {
     const [messages, setMessages] = useState<Message[]>([])
     const [loading, setLoading] = useState(false)
@@ -22,26 +34,40 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
     const [isAutomationOpen, setIsAutomationOpen] = useState(false)
     const [automations, setAutomations] = useState<any[]>([])
     const bottomRef = useRef<HTMLDivElement>(null)
+    const scrollRef = useRef<HTMLDivElement>(null)
+    const stickToBottom = useRef(true)
 
     useEffect(() => {
         if (!conversationId) return
+        let disposed = false
+        stickToBottom.current = true
 
-        const fetchMessages = async () => {
-            setLoading(true)
+        const fetchMessages = async (background: boolean) => {
+            if (!background) setLoading(true)
             try {
                 const res = await fetch(`/api/inbox/messages?conversationId=${conversationId}`)
                 const data = await res.json()
-                if (Array.isArray(data)) {
-                    setMessages(data)
-                }
+                if (disposed || !Array.isArray(data)) return
+                const now = Date.now()
+                setMessages(previous => mergeMessages(previous, data, now))
             } catch (error) {
-                console.error("Failed to load messages", error)
+                if (!disposed) console.error("Failed to load messages", error)
             } finally {
-                setLoading(false)
+                if (!disposed && !background) setLoading(false)
             }
         }
 
-        fetchMessages()
+        fetchMessages(false)
+
+        // Live inbox: conservative 10s refresh, skipped while the tab is hidden.
+        const poll = setInterval(() => {
+            if (document.visibilityState === "visible") void fetchMessages(true)
+        }, MESSAGES_POLL_MS)
+
+        return () => {
+            disposed = true
+            clearInterval(poll)
+        }
     }, [conversationId])
 
     // Fetch automations for quick reply
@@ -54,8 +80,14 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
     }, [userId])
 
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+        if (stickToBottom.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }, [messages])
+
+    const handleUserScroll = () => {
+        const element = scrollRef.current
+        if (!element) return
+        stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120
+    }
 
     const handleSendMessage = async (text: string = inputText) => {
         if (!text.trim() || !recipientId || !userId) return
@@ -86,6 +118,7 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                     created_at: new Date().toISOString()
                 }
                 setMessages(prev => [...prev, newMsg])
+                stickToBottom.current = true
             }
         } catch (e) {
             console.error("Send failed", e)
@@ -138,7 +171,7 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
+            <div ref={scrollRef} onScroll={handleUserScroll} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
                 {loading ? (
                     <div className="flex justify-center py-10">
                         <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
