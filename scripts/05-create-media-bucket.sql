@@ -1,31 +1,21 @@
--- Create the 'media' storage bucket if it doesn't exist
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('media', 'media', true)
-ON CONFLICT (id) DO NOTHING;
+-- LOCKDOWN (was: "create media bucket with public access")
+--
+-- The app never reads or writes Supabase Storage, and anonymous
+-- INSERT/SELECT/DELETE on a bucket lets anyone with the URL upload or
+-- delete files. This script creates the bucket as private and removes the
+-- anonymous policies created by earlier versions of this file.
 
--- Enable Row Level Security (RLS) - good practice even if policies are broad
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('media', 'media', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
+
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
--- 1. Allow Public Uploads to 'media' bucket
-CREATE POLICY "Media Public Uploads" 
-ON storage.objects FOR INSERT 
-TO public 
-WITH CHECK (bucket_id = 'media');
-
--- 2. Allow Public Viewing/Select of 'media' bucket
-CREATE POLICY "Media Public Viewing" 
-ON storage.objects FOR SELECT 
-TO public 
-USING (bucket_id = 'media');
-
--- 3. Allow Public Update (optional, if you need to overwrite)
-CREATE POLICY "Media Public Update" 
-ON storage.objects FOR UPDATE
-TO public 
-USING (bucket_id = 'media');
-
--- 4. Allow Public Deletion (optional)
-CREATE POLICY "Media Public Deletion" 
-ON storage.objects FOR DELETE 
-TO public 
-USING (bucket_id = 'media');
+DROP POLICY IF EXISTS "Media Public Uploads" ON storage.objects;
+DROP POLICY IF EXISTS "Media Public Viewing" ON storage.objects;
+DROP POLICY IF EXISTS "Media Public Update" ON storage.objects;
+DROP POLICY IF EXISTS "Media Public Deletion" ON storage.objects;
+DROP POLICY IF EXISTS "Public Access" ON storage.objects;
+DROP POLICY IF EXISTS "Public Uploads" ON storage.objects;
+DROP POLICY IF EXISTS "Public Viewing" ON storage.objects;
+DROP POLICY IF EXISTS "Public Deletion" ON storage.objects;

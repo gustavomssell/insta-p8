@@ -218,34 +218,33 @@ CREATE INDEX IF NOT EXISTS idx_content_pool_user_sequence ON public.content_pool
 CREATE INDEX IF NOT EXISTS idx_scheduler_next_run ON public.scheduler_config(next_run_at);
 CREATE INDEX IF NOT EXISTS idx_reels_posts_user_status ON public.reels_posts(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_unlock_attempts_updated ON public.unlock_attempts(updated_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_user_id ON public.webhook_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_processed ON public.webhook_events(processed_at);
 
 -- ==========================================
 -- Storage Bucket: reels
+--
+-- The bucket stays private. Nothing in the app reads or writes it yet (the
+-- reels auto-poster feature is not implemented), so no access policy is
+-- granted: anonymous users must never be able to upload or delete objects.
+-- When the feature ships, scope policies to `authenticated` + user_id instead
+-- of re-opening them to `public`.
 -- ==========================================
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('reels', 'reels', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
+VALUES ('reels', 'reels', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
 
--- Drop storage policies if they exist to prevent duplicates
+-- Remove every anonymous policy older deployments may have created (the names
+-- below cover both the original set and the "Media Public *" variants).
+-- The auto-migrator runs these too, so existing projects self-heal on cold start.
+DROP POLICY IF EXISTS "Public Access" ON storage.objects;
 DROP POLICY IF EXISTS "Public Uploads" ON storage.objects;
 DROP POLICY IF EXISTS "Public Viewing" ON storage.objects;
 DROP POLICY IF EXISTS "Public Deletion" ON storage.objects;
-
--- Create policies for storage
-CREATE POLICY "Public Uploads"
-ON storage.objects FOR INSERT
-TO public
-WITH CHECK (bucket_id = 'reels');
-
-CREATE POLICY "Public Viewing"
-ON storage.objects FOR SELECT
-TO public
-USING (bucket_id = 'reels');
-
-CREATE POLICY "Public Deletion"
-ON storage.objects FOR DELETE
-TO public
-USING (bucket_id = 'reels');
+DROP POLICY IF EXISTS "Media Public Uploads" ON storage.objects;
+DROP POLICY IF EXISTS "Media Public Viewing" ON storage.objects;
+DROP POLICY IF EXISTS "Media Public Update" ON storage.objects;
+DROP POLICY IF EXISTS "Media Public Deletion" ON storage.objects;
 
 -- =========================================================================
 -- SECURITY: Row Level Security (RLS) for public schema tables
@@ -424,10 +423,14 @@ END;
 $$;
 
 -- =========================================================================
--- Periodic cleanup of stale unlock_attempts (older than 24h).
+-- Periodic cleanup of stale unlock_attempts (older than 24h) and webhook
+-- audit events (older than 30 days).
 -- Set up via Supabase pg_cron (Dashboard -> Database -> Extensions -> pg_cron), then:
 --   SELECT cron.schedule('purge-unlock-attempts', '0 * * * *',
 --     $$DELETE FROM public.unlock_attempts WHERE updated_at < NOW() - INTERVAL '24 hours'$$);
+--   SELECT cron.schedule('purge-webhook-events', '30 3 * * *',
+--     $$DELETE FROM public.webhook_events WHERE processed_at < NOW() - INTERVAL '30 days'$$);
 -- Or run manually in the SQL editor:
 --   DELETE FROM public.unlock_attempts WHERE updated_at < NOW() - INTERVAL '24 hours';
+--   DELETE FROM public.webhook_events WHERE processed_at < NOW() - INTERVAL '30 days';
 -- =========================================================================

@@ -23,10 +23,10 @@ This is the entry point. We moved away from the old `api.instagram.com` auth to 
 * `instagram_business_basic`: Essential for reading profile info.
 * `instagram_business_manage_messages`: Required for DMs.
 * `instagram_business_manage_comments`: Required for Comments.
-* `instagram_business_content_publish`: Required for some auto-responses.
+* `instagram_business_content_publish`: **not requested today** — only needed if you build the auto-posting/reels feature.
 
 
-* **Key Parameter:** `force_reauth=true`. This ensures the user actually sees the login screen, preventing accidental connections to the wrong cached account.
+* **Key Parameter:** `force_authentication=1`. This ensures the user actually sees the login screen, preventing accidental connections to the wrong cached account.
 
 ---
 
@@ -97,11 +97,11 @@ If the ID is **NOT** in the database (e.g., Discovery failed during login):
 
 We utilize a flexible schema to handle the "Dual Identity" of Instagram accounts.
 
-* `id` (Text, PK): The **Login ID** (IGSID, starts with `256...`). Used for authentication.
-* `username` (Text): Visual reference only.
-* `access_token` (Text): The key to the API.
-* `business_account_id` (Text): The **Main Business ID** (starts with `1784...`). Used for sending messages and receiving Echos.
-* `page_id` (Text): The **Shadow ID** or Fallback ID. Used for receiving some webhooks or as a backup.
+* `id` (BIGINT, PK): The **Login ID** (IGSID). Used for authentication.
+* `username` (TEXT): Visual reference only.
+* `access_token` (TEXT): The key to the API.
+* `business_account_id` (BIGINT): The **Main Business ID** (starts with `1784...`). Used for sending messages and receiving Echos.
+* `page_id` (TEXT): The **Shadow ID** or Fallback ID. Used for receiving some webhooks or as a backup.
 
 ---
 

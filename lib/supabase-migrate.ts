@@ -13,6 +13,8 @@ let _running: Promise<void> | null = null
  *   - CREATE INDEX IF NOT EXISTS
  *   - CREATE EXTENSION IF NOT EXISTS
  *   - CREATE OR REPLACE FUNCTION (plpgsql RPCs, including $$ ... $$ bodies)
+ *   - DROP POLICY IF EXISTS ... ON storage.objects (legacy anonymous bucket
+ *     policies; safe to re-run and self-heals existing deployments)
  *
  * Manual one-time setup (apply via Supabase SQL editor -- anon role required):
  *   - CREATE POLICY (RLS)
@@ -44,7 +46,7 @@ export async function ensureSchema(): Promise<void> {
       return
     }
 
-    console.log(`[migrate] Applying schema.sql (idempotent CREATE TABLE / INDEX / EXTENSION / FUNCTION)...`)
+    console.log(`[migrate] Applying schema.sql (idempotent CREATE TABLE / INDEX / EXTENSION / FUNCTION, storage policy drops)...`)
 
     const sql = fs.readFileSync(schemaPath, "utf8")
     const supabase = getSupabaseAdmin()
@@ -74,10 +76,14 @@ export async function ensureSchema(): Promise<void> {
 
 /**
  * Extract CREATE TABLE / CREATE INDEX / CREATE EXTENSION / CREATE OR REPLACE
- * FUNCTION statements from schema.sql. We deliberately EXCLUDE CREATE POLICY
- * -- policies require one-time application in the SQL editor because they
- * reference the `anon` role and the table-level ALTER TABLE ... ENABLE ROW
- * LEVEL SECURITY.
+ * FUNCTION statements from schema.sql, plus DROP POLICY IF EXISTS statements
+ * that target storage.objects (the anonymous bucket policies legacy
+ * deployments still have -- dropping them is idempotent and closes a public
+ * read/write hole without touching the app's own RLS).
+ *
+ * We deliberately EXCLUDE CREATE POLICY -- app-table policies require one-time
+ * application in the SQL editor because they reference the `anon` role and the
+ * table-level ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
  *
  * For CREATE OR REPLACE FUNCTION bodies, we collect lines until the closing
  * `$$;` marker (Postgres dollar-quoted function bodies).
@@ -97,7 +103,9 @@ function parseSafeStatements(sql: string): string[] {
 
   for (const line of lines) {
     const trimmed = line.trim()
-    const starts = /^(CREATE\s+(TABLE|INDEX|EXTENSION)\s+IF\s+NOT\s+EXISTS|CREATE\s+OR\s+REPLACE\s+FUNCTION)/i.test(trimmed)
+    const starts =
+      /^(CREATE\s+(TABLE|INDEX|EXTENSION)\s+IF\s+NOT\s+EXISTS|CREATE\s+OR\s+REPLACE\s+FUNCTION)/i.test(trimmed) ||
+      (/^DROP\s+POLICY\s+IF\s+EXISTS/i.test(trimmed) && /\bON\s+storage\.objects\b/i.test(trimmed))
 
     if (!inStatement && starts) {
       inStatement = true

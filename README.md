@@ -175,7 +175,7 @@ ManyChat is great, but it is closed-source and paid. InstaAuto is for people who
 - Short human-like replies
 - Typing indicators
 - Random delay before response for more natural behavior
-- Proxy-based AI gateway support via `/api/groq/chat`
+- Bring your own OpenAI-compatible provider (custom base URL + model per account)
 
 ### 🧊 Instagram Ice Breakers
 
@@ -273,7 +273,7 @@ cd insta-p8
 npm install
 ```
 
-You can also use Bun or pnpm if that is your preferred package manager.
+The repo ships a single `package-lock.json` — stick to **npm** so installs stay reproducible.
 
 ### 3. Create a Supabase project
 
@@ -294,13 +294,12 @@ Run **`schema.sql`** in the Supabase SQL editor (**Database → SQL editor → N
 5. Click "Run" (or Ctrl+Enter)
 ```
 
-`schema.sql` is the canonical source of truth for the database. It is idempotent (every `CREATE` uses `IF NOT EXISTS`) and safe to re-run. The same file is also bundled into the Vercel serverless bundle and the runtime migration runner (`lib/supabase-migrate.ts`) runs the equivalent `CREATE TABLE / INDEX / EXTENSION` statements on every cold start, so new environments self-heal.
+`schema.sql` is the canonical source of truth for the database. It is idempotent (every `CREATE` uses `IF NOT EXISTS`) and safe to re-run. The same file is also bundled into the Vercel serverless bundle and the runtime migration runner (`lib/supabase-migrate.ts`) runs the equivalent `CREATE TABLE / INDEX / EXTENSION / FUNCTION` statements plus the `DROP POLICY IF EXISTS ... ON storage.objects` ones (legacy anonymous bucket policies) on every cold start, so new environments self-heal and existing ones close old public storage holes.
 
 **One-time manual steps that the auto-migrator does NOT run** (applied automatically by `schema.sql` when you paste it into the SQL editor — they need the `anon` role, which the migration runner does not switch into):
 
 - `CREATE POLICY` (per-user RLS policies)
 - `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`
-- `CREATE OR REPLACE FUNCTION` (RPCs like `bump_unlock_attempt`)
 
 #### 3b. Schedule the hourly cleanup (recommended)
 
@@ -313,6 +312,10 @@ The follower-gate cap records unlock attempts in `public.unlock_attempts`. Stale
 ```sql
 SELECT cron.schedule('purge-unlock-attempts', '0 * * * *',
   $$DELETE FROM public.unlock_attempts WHERE updated_at < NOW() - INTERVAL '24 hours'$$);
+
+-- Webhook audit log (public.webhook_events): keep 30 days
+SELECT cron.schedule('purge-webhook-events', '30 3 * * *',
+  $$DELETE FROM public.webhook_events WHERE processed_at < NOW() - INTERVAL '30 days'$$);
 ```
 
 To manually purge right now:
@@ -361,8 +364,11 @@ INSTAGRAM_APP_SECRET=your_instagram_app_secret
 NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=http://localhost:3000/api/instagram/callback
 INSTAGRAM_WEBHOOK_VERIFY_TOKEN=choose_a_strong_verify_token
 
-GATEWAY_SECRET=your_ai_gateway_secret
-API_SECRET_KEY=your_internal_hook_secret
+# Signs the session cookie (any long random string)
+SESSION_SECRET=choose_a_long_random_string
+
+# Optional: AI auto-replies
+GROQ_API_KEY=your_groq_key
 ```
 
 ### 6. Run locally
@@ -391,10 +397,11 @@ http://localhost:3000
 | `INSTAGRAM_APP_SECRET` | ✅ | Instagram app secret for token exchange |
 | `NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI` | ✅ | OAuth redirect URI |
 | `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` | ✅ | Webhook verification token |
-| `GATEWAY_SECRET` | Optional | Secret used for AI gateway/proxy calls |
-| `API_SECRET_KEY` | Optional | Internal API secret for publishing hooks |
+| `SESSION_SECRET` | ✅ | HMAC secret that signs the session cookie (falls back to `INSTAGRAM_APP_SECRET`) |
+| `META_APP_SECRET` | Optional | Parent Meta app secret, only if webhook signature checks fail with 401 |
+| `GROQ_API_KEY` | Optional | Global AI key; each account can also store its own key |
 
-**Security note:** never expose `SUPABASE_SERVICE_ROLE_KEY`, `INSTAGRAM_APP_SECRET`, user access tokens, or `API_SECRET_KEY` in client-side code.
+**Security note:** never expose `SUPABASE_SERVICE_ROLE_KEY`, `INSTAGRAM_APP_SECRET`, `SESSION_SECRET`, or user access tokens in client-side code.
 
 ---
 

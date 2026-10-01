@@ -31,8 +31,9 @@ and you're done — every statement is `IF NOT EXISTS` so re-running is safe.
 4. Paste the entire contents of `schema.sql` from the project root
 5. Click **Run** (or `Ctrl+Enter`)
 
-The script creates 12 tables, indexes, the `reels` storage bucket, the
-per-user RLS policies, and the `bump_unlock_attempt` RPC.
+The script creates 12 tables, indexes, the **private** `reels` storage bucket
+(no anonymous access policies), the per-user RLS policies, and the
+`bump_unlock_attempt` RPC.
 
 ---
 
@@ -53,6 +54,10 @@ bounded is pg_cron.
 ```sql
 SELECT cron.schedule('purge-unlock-attempts', '0 * * * *',
   $$DELETE FROM public.unlock_attempts WHERE updated_at < NOW() - INTERVAL '24 hours'$$);
+
+-- Webhook audit log (public.webhook_events): keep 30 days
+SELECT cron.schedule('purge-webhook-events', '30 3 * * *',
+  $$DELETE FROM public.webhook_events WHERE processed_at < NOW() - INTERVAL '30 days'$$);
 ```
 
 This deletes rows older than 24 hours, every hour. The 24h window matches
@@ -78,11 +83,14 @@ SELECT count(*) FROM pg_tables WHERE schemaname = 'public';
 -- Should return 'bump_unlock_attempt'
 SELECT proname FROM pg_proc WHERE proname = 'bump_unlock_attempt';
 
--- Should return 12 RLS policy rows
+-- Should return 25 RLS policy rows
 SELECT count(*) FROM pg_policies WHERE schemaname = 'public';
 
 -- Should show 12 tables with RLS enabled
 SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;
+
+-- Should show 0 anonymous storage policies
+SELECT policyname FROM pg_policies WHERE schemaname = 'storage';
 ```
 
 If any of these returns 0, re-run `schema.sql` from step 1.
@@ -116,15 +124,18 @@ start:
 ensureSchema().catch((e) => console.warn("[webhook] ensureSchema failed:", e?.message))
 ```
 
-It opens the bundled `schema.sql`, extracts only `CREATE TABLE / INDEX /
-EXTENSION` statements (deliberately skipping `CREATE POLICY` and `ALTER
-TABLE ... ENABLE ROW LEVEL SECURITY`), and runs them through the RPC
+It opens the bundled `schema.sql`, extracts `CREATE TABLE / INDEX / EXTENSION`
+statements plus the `DROP POLICY IF EXISTS ... ON storage.objects` ones (the
+legacy anonymous bucket policies -- dropping them is idempotent and self-heals
+existing deployments), deliberately skipping `CREATE POLICY` and `ALTER
+TABLE ... ENABLE ROW LEVEL SECURITY`, and runs them through the RPC
 `exec_sql(sql text)` if the project has it set up. If not, it logs a clear
 warning and falls back to the SQL-editor path.
 
 The end-state requirement is the same: schema.sql must be applied once at
 deploy time. The runner is a safety net for fresh environments that didn't
-get the manual step.
+get the manual step -- and for existing ones that still expose an old public
+storage policy.
 
 ---
 
@@ -137,3 +148,4 @@ get the manual step.
 | Webhook logs "schema.sql not found" | `schema.sql` isn't in the Vercel bundle. Confirm `outputFileTracingIncludes` in `next.config.mjs` includes `./schema.sql`. |
 | `pg_cron` says "extension not found" | The extension wasn't enabled. Database → Extensions → pg_cron → Enable. |
 | Webhook logs "ensureSchema failed: exec_sql RPC skipped" | Expected on a fresh project — the SQL editor path is the canonical setup. Run `schema.sql` manually. |
+| `pg_policies` still shows anonymous `storage.objects` rows | Legacy bucket policies. Run `scripts/08-fix-storage-permissions.sql` (or re-run `schema.sql`) in the SQL editor. |
