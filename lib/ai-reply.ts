@@ -1,11 +1,17 @@
+import { validateAiBaseUrl } from "@/lib/ai-base-url"
+
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 function resolveEndpoint(userBaseUrl?: string | null): string {
-  if (userBaseUrl) {
+  // Unsafe/invalid user URLs never receive the API key: fall back to default.
+  const base = validateAiBaseUrl(userBaseUrl)
+  if (base) {
     // user stored a base URL like "https://api.quickaitool.com/v1" — append the completions path
-    const base = userBaseUrl.replace(/\/+$/, "")
     return base.endsWith("/chat/completions") ? base : `${base}/chat/completions`
+  }
+  if (userBaseUrl) {
+    console.warn("[ai-reply] Ignoring unsafe ai_base_url; using default endpoint")
   }
   return process.env.AI_BASE_URL || (process.env.GROQ_API_KEY ? GROQ_URL : OPENAI_URL)
 }

@@ -9,6 +9,7 @@ async function test(matched, profileFails = false) {
   let sent = 0
   let finished = false
   const saved = []
+  const events = []
   const user = { id: 'user', business_account_id: 'business', access_token: 'fake', username: 'owner' }
   const db = { from(table) {
     let inserted
@@ -37,6 +38,11 @@ async function test(matched, profileFails = false) {
       sendSenderAction: async () => ({ ok: true }),
     },
     '@/lib/ai-reply': {}, '@/lib/unlock-tracking': { unlockKey: () => 'key' },
+    '@/lib/ig-token': { getFreshAccessToken: async (user) => user.access_token },
+    '@/lib/webhook-events': {
+      trackWebhookEvent: (supabase, sink, eventType, userId, data) => { events.push({ eventType, userId, data }) },
+      flushWebhookEvents: async () => {},
+    },
   }
   process.env.INSTAGRAM_APP_SECRET = 'test-secret'
   const module = { exports: {} }
@@ -57,6 +63,8 @@ async function test(matched, profileFails = false) {
     assert.equal(saved.filter(row => row.is_from_instagram).length, 1)
     assert.equal(saved.filter(row => !row.is_from_instagram).length, matched ? 1 : 0)
   }
+  const expectedOutcome = matched ? 'dm_reply' : 'dm_no_rule'
+  assert.ok(events.some(event => event.eventType === expectedOutcome), `webhook must log ${expectedOutcome}`)
 }
 async function main() {
   await test(true)

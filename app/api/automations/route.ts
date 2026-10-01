@@ -1,10 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { getSessionUserId, notFound, requireSessionUser, unauthorized } from "@/lib/session"
 
 export async function GET(request: NextRequest) {
   try {
     const userId = request.nextUrl.searchParams.get("userId")
     if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 })
+    const sessionUserId = requireSessionUser(request, userId)
+    if (!sessionUserId) return unauthorized()
 
     const supabase = await getSupabaseServerClient()
 
@@ -13,7 +16,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from("automations")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", sessionUserId)
       .order("created_at", { ascending: false })
 
     if (error) throw error
@@ -31,6 +34,8 @@ export async function POST(request: NextRequest) {
     if (!userId || !name || !trigger_value || !content || !trigger_source) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 })
     }
+    const sessionUserId = requireSessionUser(request, userId)
+    if (!sessionUserId) return unauthorized()
 
     // Validate trigger_source
     if (!['comment', 'dm', 'story'].includes(trigger_source)) {
@@ -48,7 +53,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from("automations")
       .insert({
-        user_id: userId,
+        user_id: sessionUserId,
         name,
         trigger_source,
         trigger_type: trigger_type || "keyword",
@@ -73,9 +78,19 @@ export async function DELETE(request: NextRequest) {
   try {
     const id = request.nextUrl.searchParams.get("id")
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
+    const sessionUserId = getSessionUserId(request)
+    if (!sessionUserId) return unauthorized()
+
     const supabase = await getSupabaseServerClient()
-    const { error } = await supabase.from("automations").delete().eq("id", id)
+    const { data, error } = await supabase
+      .from("automations")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", sessionUserId)
+      .select("id")
+      .maybeSingle()
     if (error) throw error
+    if (!data) return notFound()
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[v0] Automations DELETE error:", error)
@@ -90,6 +105,8 @@ export async function PUT(request: NextRequest) {
     if (!id || !name || !trigger_value || !content) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 })
     }
+    const sessionUserId = getSessionUserId(request)
+    if (!sessionUserId) return unauthorized()
 
     // Validate trigger_source if provided
     if (trigger_source && !['comment', 'dm', 'story'].includes(trigger_source)) {
@@ -115,10 +132,12 @@ export async function PUT(request: NextRequest) {
       .from("automations")
       .update(updateData)
       .eq("id", id)
+      .eq("user_id", sessionUserId)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) throw error
+    if (!data) return notFound()
     return NextResponse.json(data)
   } catch (error) {
     console.error("[v0] Automations PUT error:", error)
@@ -130,6 +149,8 @@ export async function PATCH(request: NextRequest) {
   try {
     const { id, is_active, action } = await request.json()
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
+    const sessionUserId = getSessionUserId(request)
+    if (!sessionUserId) return unauthorized()
 
     const supabase = await getSupabaseServerClient()
 
@@ -138,6 +159,7 @@ export async function PATCH(request: NextRequest) {
         .from("automations")
         .select("*")
         .eq("id", id)
+        .eq("user_id", sessionUserId)
         .single()
       if (fetchError || !original) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
@@ -159,10 +181,12 @@ export async function PATCH(request: NextRequest) {
       .from("automations")
       .update({ is_active })
       .eq("id", id)
+      .eq("user_id", sessionUserId)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) throw error
+    if (!data) return notFound()
     return NextResponse.json(data)
   } catch (error) {
     console.error("[v0] Automations PATCH error:", error)

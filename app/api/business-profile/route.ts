@@ -1,28 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { getSession, unauthorized } from "@/lib/session"
 
 type Knowledge = Record<string, string>
 
-function getSessionUserId(request: NextRequest): string | null {
-    try {
-        const raw = request.cookies.get("insta_session")?.value
-        if (!raw) return null
-        const session = JSON.parse(raw) as { userId?: string }
-        return session.userId || null
-    } catch {
-        return null
-    }
-}
-
 export async function GET(request: NextRequest) {
-    const sessionUserId = getSessionUserId(request)
+    const session = getSession(request)
     const requestedUserId = request.nextUrl.searchParams.get("userId")
-    if (!sessionUserId || !requestedUserId || sessionUserId !== requestedUserId) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!session || !requestedUserId || session.userId !== requestedUserId) {
+        return unauthorized()
     }
 
     const supabase = await getSupabaseServerClient()
-    const { data, error } = await supabase.from("users").select("ai_context").eq("id", sessionUserId).single()
+    const { data, error } = await supabase.from("users").select("ai_context").eq("id", session.userId).single()
     if (error) return NextResponse.json({ error: "Failed to load business profile" }, { status: 500 })
 
     let knowledge: Knowledge = {}
@@ -35,12 +25,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-    const sessionUserId = getSessionUserId(request)
+    const session = getSession(request)
     const body = await request.json()
     const { userId, knowledge } = body as { userId?: string; knowledge?: Knowledge }
-    if (!sessionUserId || !userId || sessionUserId !== userId || !knowledge || typeof knowledge !== "object" || Array.isArray(knowledge)) {
+    if (!session || !userId || session.userId !== userId || !knowledge || typeof knowledge !== "object" || Array.isArray(knowledge)) {
         return NextResponse.json({ error: "Unauthorized or invalid request" }, { status: 401 })
     }
+    const sessionUserId = session.userId
 
     const sanitizedKnowledge = Object.fromEntries(
         Object.entries(knowledge)

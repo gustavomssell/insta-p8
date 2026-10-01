@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { requireSessionUser, unauthorized } from "@/lib/session"
+import { getFreshAccessToken } from "@/lib/ig-token"
 
 /**
  * POST /api/instagram/send-message
@@ -19,14 +21,16 @@ export async function POST(request: NextRequest) {
     if (!user_id || !recipient_id || !message) {
       return NextResponse.json({ error: "Missing required fields: user_id, recipient_id, message" }, { status: 400 })
     }
+    const sessionUserId = requireSessionUser(request, user_id)
+    if (!sessionUserId) return unauthorized()
 
     const supabase = await getSupabaseServerClient()
 
     // Get user's access token
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("access_token, username")
-      .eq("id", user_id)
+      .select("id, access_token, token_expires_at, username")
+      .eq("id", sessionUserId)
       .single()
 
     if (userError || !user) {
@@ -34,10 +38,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
+    const accessToken = await getFreshAccessToken(user, supabase)
+
     console.log("[v0] Sending DM from", user.username, "to", recipient_id)
 
     // Send message via Instagram API
-    const sendUrl = `https://graph.instagram.com/v24.0/me/messages?access_token=${encodeURIComponent(user.access_token)}`
+    const sendUrl = `https://graph.instagram.com/v24.0/me/messages?access_token=${encodeURIComponent(accessToken || "")}`
 
     const response = await fetch(sendUrl, {
       method: "POST",

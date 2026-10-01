@@ -1,15 +1,19 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { requireSessionUser, unauthorized } from "@/lib/session"
+import { isSafeAiBaseUrl } from "@/lib/ai-base-url"
 
 export async function GET(request: NextRequest) {
   const userId = request.nextUrl.searchParams.get("userId")
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 })
+  const sessionUserId = requireSessionUser(request, userId)
+  if (!sessionUserId) return unauthorized()
 
   const supabase = await getSupabaseServerClient()
   const { data, error } = await supabase
     .from("users")
     .select("groq_auto_reply_enabled, ai_context, groq_api_key, ai_base_url, ai_model")
-    .eq("id", userId)
+    .eq("id", sessionUserId)
     .single()
 
   if (error || !data) return NextResponse.json({ enabled: false, ai_context: "", has_api_key: false, ai_base_url: "", ai_model: "" })
@@ -26,6 +30,12 @@ export async function PUT(request: NextRequest) {
   const body = await request.json()
   const { userId, enabled, ai_context, groq_api_key, ai_base_url, ai_model } = body
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 })
+  const sessionUserId = requireSessionUser(request, userId)
+  if (!sessionUserId) return unauthorized()
+
+  if (typeof ai_base_url === "string" && ai_base_url && !isSafeAiBaseUrl(ai_base_url)) {
+    return NextResponse.json({ error: "Invalid ai_base_url" }, { status: 400 })
+  }
 
   const supabase = await getSupabaseServerClient()
   const update: Record<string, unknown> = {}
@@ -35,7 +45,7 @@ export async function PUT(request: NextRequest) {
   if (typeof ai_base_url === "string") update.ai_base_url = ai_base_url || null
   if (typeof ai_model === "string") update.ai_model = ai_model || null
 
-  const { error } = await supabase.from("users").update(update).eq("id", userId)
+  const { error } = await supabase.from("users").update(update).eq("id", sessionUserId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

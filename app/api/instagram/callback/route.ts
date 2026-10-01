@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { setSessionCookie } from "@/lib/session"
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -118,12 +119,7 @@ export async function POST(request: NextRequest) {
     if (upsertError) throw upsertError
 
     const response = NextResponse.json({ success: true, username, userId: loginUserId, profilePic })
-    response.cookies.set("insta_session", JSON.stringify({ username, userId: loginUserId }), {
-      path: "/",
-      maxAge: expiresIn,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-    })
+    setSessionCookie(response, { username, userId: loginUserId }, expiresIn)
     return response
 
   } catch (error: any) {

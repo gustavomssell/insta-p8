@@ -1,10 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { requireSessionUser, unauthorized } from "@/lib/session"
 
 export async function GET(request: NextRequest) {
     try {
         const userId = request.nextUrl.searchParams.get("userId")
         if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 })
+        const sessionUserId = requireSessionUser(request, userId)
+        if (!sessionUserId) return unauthorized()
 
         const supabase = await getSupabaseServerClient()
 
@@ -12,7 +15,7 @@ export async function GET(request: NextRequest) {
         const { data: conversations, error } = await supabase
             .from("conversations")
             .select("*")
-            .eq("user_id", userId)
+            .eq("user_id", sessionUserId)
             .order("last_message_at", { ascending: false })
 
         if (error) throw error

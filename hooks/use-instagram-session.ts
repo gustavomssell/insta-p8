@@ -1,7 +1,19 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+
+const IDENTITY_KEYS = ["ig_user_id", "ig_username", "ig_profile_pic"]
+
+function clearIdentity() {
+    IDENTITY_KEYS.forEach((key) => localStorage.removeItem(key))
+}
+
+function storeIdentity(id: string, username: string, profilePic?: string | null) {
+    localStorage.setItem("ig_user_id", id)
+    localStorage.setItem("ig_username", username)
+    if (profilePic) localStorage.setItem("ig_profile_pic", profilePic)
+}
 
 export function useInstagramSession() {
     const [username, setUsername] = useState<string | null>(null)
@@ -15,9 +27,30 @@ export function useInstagramSession() {
     useEffect(() => {
         const code = searchParams.get("code")
 
+        /**
+         * Adopt identity from the signed session cookie.
+         * Returns true when a valid session exists.
+         */
+        const restoreFromCookie = async (): Promise<boolean> => {
+            try {
+                const res = await fetch("/api/session", { cache: "no-store" })
+                if (!res.ok) return false
+                const session = await res.json()
+                setUserId(session.userId)
+                setUsername(session.username || null)
+                setProfilePic(localStorage.getItem("ig_profile_pic"))
+                storeIdentity(session.userId, session.username || "")
+                return true
+            } catch (err) {
+                console.error("Session restore failed:", err)
+                return false
+            }
+        }
+
         const handleSession = async () => {
             // CASE A: New Login from Instagram
             if (code) {
+                let loggedIn = false
                 try {
                     const res = await fetch("/api/instagram/callback", {
                         method: "POST",
@@ -26,29 +59,40 @@ export function useInstagramSession() {
                     const data = await res.json()
 
                     if (data.success) {
-                        localStorage.setItem("ig_user_id", data.userId)
-                        localStorage.setItem("ig_username", data.username)
-                        if (data.profilePic) localStorage.setItem("ig_profile_pic", data.profilePic)
-
+                        storeIdentity(data.userId, data.username, data.profilePic)
                         setUserId(data.userId)
                         setUsername(data.username)
                         setProfilePic(data.profilePic || null)
+                        loggedIn = true
                         // Remove code from URL
                         router.replace("/dashboard")
                     }
                 } catch (err) {
                     console.error("Login failed:", err)
                 }
-            }
-            // CASE B: Restore Session from LocalStorage
-            else {
-                const savedId = localStorage.getItem("ig_user_id")
-                const savedName = localStorage.getItem("ig_username")
 
-                if (savedId && savedName) {
-                    setUserId(savedId)
-                    setUsername(savedName)
-                    setProfilePic(localStorage.getItem("ig_profile_pic"))
+                // The callback can reject a code that a parallel effect already
+                // consumed (React StrictMode in dev). In that case a session may
+                // still exist — adopt it instead of clearing a good login.
+                if (!loggedIn) {
+                    const restored = await restoreFromCookie()
+                    if (!restored) {
+                        clearIdentity()
+                        setUserId(null)
+                        setUsername(null)
+                        setProfilePic(null)
+                    }
+                }
+            }
+            // CASE B: restore from the signed session cookie
+            // (localStorage is display-only; never trusted as identity).
+            else {
+                const restored = await restoreFromCookie()
+                if (!restored) {
+                    clearIdentity()
+                    setUserId(null)
+                    setUsername(null)
+                    setProfilePic(null)
                 }
             }
             setIsLoading(false)
@@ -57,16 +101,18 @@ export function useInstagramSession() {
         handleSession()
     }, [searchParams, router])
 
-    const logout = () => {
-        localStorage.removeItem("ig_user_id")
-        localStorage.removeItem("ig_username")
-        localStorage.removeItem("ig_profile_pic")
-        document.cookie = "insta_session=; Max-Age=0; path=/;"
+    const logout = useCallback(async () => {
+        try {
+            await fetch("/api/session", { method: "DELETE" })
+        } catch (err) {
+            console.error("Logout failed:", err)
+        }
+        clearIdentity()
         setUsername(null)
         setUserId(null)
         setProfilePic(null)
         router.push("/")
-    }
+    }, [router])
 
     return { userId, username, profilePic, isLoading, logout }
 }

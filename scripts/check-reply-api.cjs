@@ -7,7 +7,8 @@ function load(path) {
   const code = ts.transpileModule(fs.readFileSync(path, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
-  new Function('exports', 'require', 'module', code)(module.exports, require, module)
+  const localRequire = (name) => (name.startsWith('@/') ? load(`${name.slice(2)}.ts`) : require(name))
+  new Function('exports', 'require', 'module', code)(module.exports, localRequire, module)
   return module.exports
 }
 

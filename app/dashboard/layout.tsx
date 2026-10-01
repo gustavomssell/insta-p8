@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Sidebar } from "@/components/layout/sidebar"
 import { MobileNav } from "@/components/layout/mobile-nav"
 import { useInstagramSession } from "@/hooks/use-instagram-session"
@@ -13,10 +14,16 @@ export default function DashboardLayout({
 }) {
     const { username, profilePic, logout, isLoading } = useInstagramSession()
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+    const router = useRouter()
 
     useEffect(() => {
         setSidebarCollapsed(localStorage.getItem("insta-p8-sidebar") === "collapsed")
     }, [])
+
+    // No valid session (signed cookie missing/expired) — leave the dashboard.
+    useEffect(() => {
+        if (!isLoading && !username) router.replace("/")
+    }, [isLoading, username, router])
 
     const toggleSidebar = () => {
         setSidebarCollapsed(value => {

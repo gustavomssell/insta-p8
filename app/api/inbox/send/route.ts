@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { requireSessionUser, unauthorized } from "@/lib/session"
+import { getFreshAccessToken } from "@/lib/ig-token"
 
 export async function POST(request: NextRequest) {
     try {
@@ -9,19 +11,23 @@ export async function POST(request: NextRequest) {
         if (!userId || !recipientId || (!message && !attachment)) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
         }
+        const sessionUserId = requireSessionUser(request, userId)
+        if (!sessionUserId) return unauthorized()
 
         const supabase = await getSupabaseServerClient()
 
         // 1. Get User Access Token
         const { data: user, error: userError } = await supabase
             .from("users")
-            .select("access_token, username, business_account_id")
-            .eq("id", userId)
+            .select("id, access_token, token_expires_at, username, business_account_id")
+            .eq("id", sessionUserId)
             .single()
 
         if (userError || !user) {
             return NextResponse.json({ error: "User not found" }, { status: 404 })
         }
+
+        const accessToken = await getFreshAccessToken(user, supabase)
 
         // 2. Prepare Payload for Instagram API
         const apiBody: any = { recipient: { id: recipientId } }
@@ -34,7 +40,7 @@ export async function POST(request: NextRequest) {
 
         // 3. Send to Instagram
         const res = await fetch(
-            `https://graph.instagram.com/v24.0/me/messages?access_token=${user.access_token}`,
+            `https://graph.instagram.com/v24.0/me/messages?access_token=${encodeURIComponent(accessToken || "")}`,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -51,7 +57,7 @@ export async function POST(request: NextRequest) {
 
         // 4. Log to Database (Outbound Message)
         // Find Conversation ID first
-        let { data: conv } = await supabase
+        const { data: conv } = await supabase
             .from("conversations")
             .select("id")
             .eq("user_id", userId)

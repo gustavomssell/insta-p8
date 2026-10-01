@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { requireSessionUser, unauthorized } from "@/lib/session"
+import { getFreshAccessToken } from "@/lib/ig-token"
 
 export async function GET(request: NextRequest) {
     try {
@@ -7,12 +9,14 @@ export async function GET(request: NextRequest) {
         const userId = searchParams.get("userId")
 
         if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 })
+        const sessionUserId = requireSessionUser(request, userId)
+        if (!sessionUserId) return unauthorized()
 
         const supabase = await getSupabaseServerClient()
         const { data, error } = await supabase
             .from("ice_breakers")
             .select("*")
-            .eq("user_id", userId)
+            .eq("user_id", sessionUserId)
             .order("created_at", { ascending: true })
 
         if (error) throw error
@@ -32,6 +36,8 @@ export async function POST(request: NextRequest) {
         if (!userId || !Array.isArray(iceBreakers)) {
             return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
         }
+        const sessionUserId = requireSessionUser(request, userId)
+        if (!sessionUserId) return unauthorized()
 
         const supabase = await getSupabaseServerClient()
 
@@ -40,14 +46,14 @@ export async function POST(request: NextRequest) {
         const { error: deleteError } = await supabase
             .from("ice_breakers")
             .delete()
-            .eq("user_id", userId)
+            .eq("user_id", sessionUserId)
 
         if (deleteError) throw deleteError
 
         const { data: inserted, error: insertError } = await supabase
             .from("ice_breakers")
             .insert(iceBreakers.map((ib: any) => ({
-                user_id: userId,
+                user_id: sessionUserId,
                 question: ib.question,
                 response: ib.response,
                 is_active: true
@@ -57,7 +63,11 @@ export async function POST(request: NextRequest) {
         if (insertError) throw insertError
 
         // 2. Sync to Instagram
-        const { data: user } = await supabase.from("users").select("access_token, page_id").eq("id", userId).single()
+        const { data: user } = await supabase
+            .from("users")
+            .select("id, access_token, token_expires_at, page_id")
+            .eq("id", sessionUserId)
+            .single()
 
         if (user && user.access_token && user.page_id) {
             // Construct IG Payload
@@ -80,8 +90,10 @@ export async function POST(request: NextRequest) {
             // Actually, keeping it simple: We set them on IG. When user clicks, we get a Postback.
             // We need to know which response to send. 
 
+            const accessToken = await getFreshAccessToken(user, supabase)
+
             const response = await fetch(
-                `https://graph.instagram.com/v21.0/me/messenger_profile?access_token=${user.access_token}`,
+                `https://graph.instagram.com/v21.0/me/messenger_profile?access_token=${encodeURIComponent(accessToken || "")}`,
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
