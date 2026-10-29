@@ -6,7 +6,7 @@ import { setSessionCookie } from "@/lib/session"
  * POST /api/instagram/test-login
  * Creates a mock user for local development — no Instagram OAuth needed.
  */
-export async function POST(request: NextRequest) {
+export async function POST(_: NextRequest) {
   try {
     // Only allow in development
     if (process.env.NODE_ENV === "production") {

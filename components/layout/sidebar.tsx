@@ -11,7 +11,11 @@ const NAV = [
   { href: "/dashboard", label: "Home", icon: "/icons/home.svg" },
   { href: "/dashboard/automations", label: "Auto replies", icon: "/icons/journal.svg" },
   { href: "/dashboard/inbox", label: "Conversations", icon: "/icons/chat.svg" },
+  { href: "/dashboard/dm-queue", label: "DM Queue", icon: "/icons/mail.svg" },
   { href: "/dashboard/ice-breakers", label: "Conversation starters", icon: "/icons/squads.svg" },
+  { href: "/dashboard/scheduler", label: "Scheduler", icon: "/icons/clock.svg" },
+  { href: "/dashboard/content-pool", label: "Content Pool", icon: "/icons/video.svg" },
+  { href: "/dashboard/reels-posts", label: "Scheduled Posts", icon: "/icons/play.svg" },
   { href: "/dashboard/analytics", label: "Insights", icon: "/icons/analytics.svg" },
 ]
 

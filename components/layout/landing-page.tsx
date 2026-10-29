@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import {
   Zap, MessageCircle, Sparkles, ArrowUpRight, Github, Star,
   Send, AtSign, Brain, Inbox, Lock, Terminal,
-  Loader2,
 } from "lucide-react"
 
 const TELEGRAM_URL = "https://t.me/instagramautomationp8"
@@ -28,10 +27,18 @@ export function LandingPage() {
     window.location.href = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID}&redirect_uri=${process.env.NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI}&response_type=code&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments`
   }
 
-  const handleTestLogin = () => {
-    localStorage.setItem("ig_user_id", "9999999999")
-    localStorage.setItem("ig_username", "test_creator")
-    router.push("/dashboard")
+  const handleTestLogin = async () => {
+    try {
+      const res = await fetch("/api/instagram/test-login", { method: "POST" })
+      const data = await res.json()
+      if (data.success) {
+        router.push("/dashboard")
+      } else {
+        console.error("Test login failed:", data.error)
+      }
+    } catch (err) {
+      console.error("Test login failed:", err)
+    }
   }
 
   return (

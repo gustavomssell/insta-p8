@@ -70,7 +70,7 @@ export function IceBreakersManager() {
             } else {
                 toast.error("Failed to save")
             }
-        } catch (e) {
+        } catch {
             toast.error("Error saving")
         } finally {
             setSaving(false)

@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
-import { Brain, Loader2 } from "lucide-react"
+import { Brain } from "lucide-react"
 export function AssistantSettings({ userId }: { userId: string }) {
     const [aiEnabled, setAiEnabled] = useState(false)
     const [aiLoading, setAiLoading] = useState(true)

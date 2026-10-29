@@ -18,7 +18,6 @@ import { getSupabaseAdmin } from "./supabase-admin"
  * concurrent invocations can lose a count.
  */
 
-const UNLOCK_TTL_MS = 24 * 60 * 60 * 1000
 const supabaseLazy = () => getSupabaseAdmin()
 
 export function unlockKey(senderId: string, ruleId: string): string {

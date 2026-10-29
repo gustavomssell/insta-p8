@@ -36,6 +36,10 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
     const bottomRef = useRef<HTMLDivElement>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
     const stickToBottom = useRef(true)
+    // Monotonic counter for optimistic message IDs — avoids calling impure
+    // functions (Date.now / Math.random) during render, which React flags and
+    // which can produce unstable IDs across re-renders.
+    const optimisticIdRef = useRef(0)
 
     useEffect(() => {
         if (!conversationId) return
@@ -108,7 +112,7 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                 setInputText("")
                 // Optimistic update
                 const newMsg: Message = {
-                    id: `temp_${Date.now()}`,
+                    id: `temp_${++optimisticIdRef.current}`,
                     conversation_id: conversationId!,
                     user_id: userId,
                     sender_id: "me",

@@ -35,15 +35,15 @@ export async function GET(request: NextRequest) {
     console.log("[v0] Fetching media list for user", sessionUserId)
 
     const res = await fetch(url, { cache: 'no-store' })
-    const data = await res.json()
+    const data = await res.json().catch(() => ({}))
 
-    if (data.error) {
+    if (!res.ok || data.error) {
       console.error("[v0] Instagram Media Error:", data.error)
       // Agar Token Invalid hai, to user ko Logout karne bolenge frontend pe
-      if (data.error.code === 190) {
+      if (data.error?.code === 190) {
          return NextResponse.json({ error: "Session Expired. Please Logout & Login." }, { status: 401 })
       }
-      return NextResponse.json({ error: data.error.message }, { status: 500 })
+      return NextResponse.json({ error: data.error?.message || "Failed to fetch media" }, { status: 500 })
     }
 
     // Normalize: pick thumbnail_url for videos, media_url for images.

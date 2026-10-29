@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import {
-  Plus, Trash2, Film, Check, MessageCircle, Send, AtSign, Heart,
-  MessageSquare, Image as ImageIcon, Timer, Eye, Megaphone, Lock,
-  Link2, Zap, ChevronDown, ChevronRight, ChevronLeft, X, Loader2,
-  ArrowLeft, Phone, Video, Info, Sparkles, Smile, Camera, Mic, Image as PicIcon,
+  Plus, Trash2, Film, Check, MessageCircle, Loader2, AtSign, Heart,
+  MessageSquare, Image as ImageIcon, Timer, Eye, Lock,
+  Link2, Zap, ChevronRight, ChevronLeft, ArrowLeft, Phone, Video, Info, Sparkles, Smile, Camera, Mic, Image as PicIcon,
   Globe
 } from "lucide-react"
 import { TagInput } from "@/components/ui/tag-input"
@@ -35,6 +34,11 @@ const STEPS = [
 export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: CreateRuleFormProps) {
   const isEditing = !!editRule
   const [step, setStep] = useState(0)
+  // Monotonic counters for generated element IDs — avoids calling impure
+  // functions (Date.now) during render/effects, which React flags and which
+  // can produce unstable IDs across re-renders.
+  const idCounterRef = useRef(0)
+  const nextId = () => `gen_${++idCounterRef.current}`
 
   /* ---------- WHEN ---------- */
   const [triggers, setTriggers] = useState<string[]>([])
@@ -105,11 +109,11 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
       setType("media"); setMediaUrl(content.media.url); setMediaType(content.media.type || "image"); setMessageText(content.message || "")
     } else if (content.card) {
       setType("card"); setCardTitle(content.card.title || ""); setCardSubtitle(content.card.subtitle || ""); setCardImage(content.card.image_url || "")
-      setButtons((content.card.buttons || []).map((b: any, i: number) => ({ id: `${Date.now()}_${i}`, ...b })))
+      setButtons((content.card.buttons || []).map((b: any) => ({ id: nextId(), ...b })))
     } else {
       setType("text"); setMessageText(content.message || "")
     }
-    setQuickReplies((content.quick_replies || []).map((q: any, i: number) => ({ id: `${Date.now()}_qr${i}`, title: q.title, payload: q.payload })))
+    setQuickReplies((content.quick_replies || []).map((q: any) => ({ id: nextId(), title: q.title, payload: q.payload })))
     setReplyMode(content.reply_mode || "both")
     setPublicReplies(content.public_replies || [])
     setIncludeReplies(content.include_replies === true)
@@ -136,7 +140,7 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
   /* ---------- helpers ---------- */
   const addButton = () => {
     if (buttons.length >= 3) return
-    setButtons([...buttons, { id: Date.now().toString(), type: "web_url", title: "", url: "", payload: "" }])
+    setButtons([...buttons, { id: nextId(), type: "web_url", title: "", url: "", payload: "" }])
   }
   const updateButton = (id: string, field: keyof ProButton, value: string) =>
     setButtons(buttons.map((b) => (b.id === id ? { ...b, [field]: value } : b)))
@@ -144,7 +148,7 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
 
   const addQuickReply = () => {
     if (quickReplies.length >= 4) return
-    setQuickReplies([...quickReplies, { id: Date.now().toString(), title: "" }])
+    setQuickReplies([...quickReplies, { id: nextId(), title: "" }])
   }
   const updateQuickReply = (id: string, title: string) =>
     setQuickReplies(quickReplies.map((q) => (q.id === id ? { ...q, title } : q)))

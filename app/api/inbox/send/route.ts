@@ -48,11 +48,11 @@ export async function POST(request: NextRequest) {
             }
         )
 
-        const data = await res.json()
+        const data = await res.json().catch(() => ({}))
 
-        if (data.error) {
-            console.error("[Inbox Send] Instagram API Error:", data.error)
-            return NextResponse.json({ error: data.error.message }, { status: 500 })
+        if (!res.ok) {
+            console.error("[Inbox Send] Instagram API Error:", data)
+            return NextResponse.json({ error: data.error?.message || "Failed to send message" }, { status: 500 })
         }
 
         // 4. Log to Database (Outbound Message)

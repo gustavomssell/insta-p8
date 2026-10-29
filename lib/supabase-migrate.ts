@@ -20,21 +20,6 @@ let _running: Promise<void> | null = null
  *   - CREATE POLICY (RLS)
  *   - ALTER TABLE ... ENABLE ROW LEVEL SECURITY
  */
-const EXPECTED_TABLES = [
-  "users",
-  "conversations",
-  "messages",
-  "webhook_events",
-  "automations",
-  "media_cache",
-  "ice_breakers",
-  "content_pool",
-  "scheduler_config",
-  "reels_posts",
-  "dm_queue",
-  "unlock_attempts",
-]
-
 export async function ensureSchema(): Promise<void> {
   if (_migrated) return
   if (_running) return _running

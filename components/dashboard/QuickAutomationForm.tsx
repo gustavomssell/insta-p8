@@ -17,7 +17,6 @@ export function QuickAutomationForm({ userId, initialSource, onSuccess }: {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const submitting = useRef(false)
-  const field = "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
